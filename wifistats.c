@@ -194,38 +194,6 @@ int read_packets_file(char *filename, char t_or_r, unsigned char (*mac_list)[MAC
   return list_len;
 }
 
-/* void swap_vendors(unsigned char (*prefixes)[OUI_LENGTH], char **vendors, int i, int j)
-{
-  char temp_prefix[3];
-  char *temp_vendor;
-  memcpy(temp_prefix, prefixes[i], OUI_LENGTH);
-  memcpy(prefixes[i], prefixes[j], OUI_LENGTH);
-  memcpy(prefixes[j], temp_prefix, OUI_LENGTH);
-  temp_vendor = vendors[i];
-  vendors[i] = vendors[j];
-  vendors[j] = temp_vendor;
-}
-
-void sort_vendors_by_oui(unsigned char (*prefixes)[OUI_LENGTH], char **vendors, int size)
-{
-  if (size < 2) return;
-  unsigned char pivot[OUI_LENGTH];
-  memcpy(pivot, prefixes[size - 1], OUI_LENGTH);
-  int i = -1;
-  for (int j = 0; j < size - 1; j++) {
-    if (memcmp(prefixes[j], pivot, OUI_LENGTH) < 0) {
-      i++;
-      swap_vendors(prefixes, vendors, i, j);
-    }
-  }
-  if (memcmp(prefixes[size - 1], prefixes[i + 1], OUI_LENGTH) < 0) {
-    swap_vendors(prefixes, vendors, i + 1, size - 1);
-  }
-  i++;
-  sort_vendors_by_oui(prefixes, vendors, i);
-  sort_vendors_by_oui(prefixes + i + 1, vendors + i + 1, size - (i + 1));
-} */
-
 int read_oui_file(char *filename, unsigned char (**prefixes_out)[OUI_LENGTH], char ***vendors_out)
 {
   // Create a buffer with an initial size
