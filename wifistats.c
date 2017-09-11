@@ -51,7 +51,7 @@ void print_sorted(char (*mac_list)[MAC_LENGTH], int *bytes_list, int num_macs, c
     char *args[] = { "sort", "-t", "\t", "-k", "2,2nr", "-k", "1,1", NULL };
     if (ouis != NULL) {
       // Sorts by bytes (3rd column) descending, then by vendor name (2nd column) ascending
-      args[3] = "3,3";
+      args[4] = "3,3nr";
       args[6] = "2,2";
     }
     execv("/usr/bin/sort", args);
