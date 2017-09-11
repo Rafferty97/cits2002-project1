@@ -1,3 +1,10 @@
+/*
+   CITS2002 Project 1 2017
+   Name(s):             Alexander Rafferty
+   Student number(s):   21712241
+   Date:                date-of-submission
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -5,59 +12,26 @@
 #include <string.h>
 #include <stdbool.h>
 #include <memory.h>
+#include <ctype.h>
 
 #define MAC_LENGTH 6
 #define OUI_LENGTH 3
 
-/* TODO:
-
-  - Better distinguish between MAC strings and raw bytes in var names
-  - Sort the output
-  - Replace "MAC prefix" with "OUI"
-  - Replace memcpy for MACs with custom function
-
-*/
-
-/* Finds the index of the OUI, or returns -1 if not found */
-int find_prefix_ind(unsigned char (*haystack)[OUI_LENGTH], int size, unsigned char needle[3])
-{
-  // If size is small, perform linear search
-  if (size < 10) {
-    for (int i = 0; i < size; i++) {
-      int cmp = memcmp(haystack[i], needle, OUI_LENGTH);
-      if (cmp > 0) return -1;
-      if (cmp == 0) return i;
-    }
-    return -1;
-  } else {
-    int middle = size / 2;
-    int comp = memcmp(haystack[middle], needle, OUI_LENGTH);
-    if (comp == 0) {
-      return middle;
-    }
-    if (comp < 0) {
-      int m1 = middle + 1;
-      int ind = find_prefix_ind(haystack + m1, size - m1, needle);
-      if (ind == -1) {
-        return -1;
-      } else {
-        return ind + m1;
-      }
-    } else {
-      return find_prefix_ind(haystack, middle, needle);
-    }
-  }
-}
-
-void format_mac(unsigned char *mac, int len, char *out)
+/** Formats a MAC address or OUI represented as raw bytes
+    into a human-readable string.
+    Assumes that the output buffer is large enough to hold the result.
+**/
+void format_mac(char *mac, int len, char *out)
 {
   for (int i = 0; i < len - 1; i++) {
-    sprintf(out + (i * 3), "%02x:", mac[i]);
+    sprintf(out + (i * 3), "%02x:", (unsigned char)mac[i]);
   }
-  sprintf(out + ((len - 1) * 3), "%02x", mac[len - 1]);
+  sprintf(out + ((len - 1) * 3), "%02x", (unsigned char)mac[len - 1]);
 }
 
-void print_sorted(unsigned char (*mac_list)[MAC_LENGTH], int *bytes_list, int list_len, unsigned char (*prefixes)[3], char **vendors, int num_vendors)
+/** Calls /usr/bin/sort to print the packet statistics in sorted order
+**/
+void print_sorted(char (*mac_list)[MAC_LENGTH], int *bytes_list, int num_macs, char (*ouis)[3], char **vendors, int num_vendors)
 {
   // Create the pipes to communicate between parent and child process
   int pd[4];
@@ -75,7 +49,7 @@ void print_sorted(unsigned char (*mac_list)[MAC_LENGTH], int *bytes_list, int li
     dup2(pd[3], STDOUT_FILENO);
     // Sorts by bytes (2nd column) descending, then by mac address (1st column) ascending
     char *args[] = { "sort", "-t", "\t", "-k", "2,2", "-nr", "-k", "1,1", NULL };
-    if (prefixes != NULL) {
+    if (ouis != NULL) {
       // Sorts by bytes (3rd column) descending, then by vendor name (2nd column) ascending
       args[4] = "3,3";
       args[7] = "2,2";
@@ -86,10 +60,11 @@ void print_sorted(unsigned char (*mac_list)[MAC_LENGTH], int *bytes_list, int li
     // Close unneeded pipes
     close(pd[0]);
     close(pd[3]);
-    // Iterate over list and print results into sort
-    for (int i=0; i<list_len; i++) {
-      unsigned char *macb = mac_list[i];
-      if (prefixes == NULL) {
+    // Prints the unsorted output of the program
+    int total_unknown_bytes = 0;
+    for (int i=0; i<num_macs; i++) {
+      char *macb = mac_list[i];
+      if (ouis == NULL) {
         char mac[20];
         format_mac(macb, MAC_LENGTH, mac);
         int bytes = bytes_list[i];
@@ -100,17 +75,26 @@ void print_sorted(unsigned char (*mac_list)[MAC_LENGTH], int *bytes_list, int li
         char mac[20];
         format_mac(macb, OUI_LENGTH, mac);
         int bytes = bytes_list[i];
-        char *vendor = "UNKOWN-VENDOR";
+        char *vendor = NULL;
         for (int vind = 0; vind < num_vendors; vind++) {
-          if (memcmp(prefixes[vind], macb, OUI_LENGTH) == 0) {
+          if (memcmp(ouis[vind], macb, OUI_LENGTH) == 0) {
             vendor = vendors[vind];
             break;
           }
+        }
+        if (vendor == NULL) {
+          total_unknown_bytes += bytes;
+          continue;
         }
         char line[255];
         sprintf(line, "%s\t%s\t%i\n", mac, vendor, bytes);
         write(pd[1], line, strlen(line));
       }
+    }
+    if (total_unknown_bytes > 0) {
+      char line[255];
+      sprintf(line, "??:??:??\tUNKNOWN-VENDOR\t%i\n", total_unknown_bytes);
+      write(pd[1], line, strlen(line));
     }
     // Finished printing
     close(pd[1]);
@@ -118,16 +102,23 @@ void print_sorted(unsigned char (*mac_list)[MAC_LENGTH], int *bytes_list, int li
     int status;
     wait(&status);
     // Read sorted results and output to stdout
-    char buffer[8192];
-    buffer[8191] = '\0';
-    while (read(pd[2], buffer, 8191) > 0) {
+    char buffer[10000];
+    int bytesRead;
+    while ((bytesRead = read(pd[2], buffer, 9999)) > 0) {
+      buffer[bytesRead] = '\0';
       printf("%s", buffer);
     }
     close(pd[2]);
   }
 }
 
-int read_packets_file(char *filename, char t_or_r, unsigned char (*mac_list)[MAC_LENGTH], int *bytes_list, bool group_by_vendor)
+/** Reads the packet file and creates an array of mac addresses
+    with a corresponding array containing total bytes sent/received
+    from that address according to the t_or_r parameter.
+    If group_by_vendor is true, then results are aggregated according
+    to OUI address rather than the entire MAC address.
+**/
+int read_packets_file(char *filename, char t_or_r, char (*mac_list)[MAC_LENGTH], int *bytes_list, bool group_by_vendor)
 {
   // Buffers for storing results
   int list_len = 0;
@@ -156,21 +147,21 @@ int read_packets_file(char *filename, char t_or_r, unsigned char (*mac_list)[MAC
     if (t_or_r == 'r') {
       mac = fields[2];
     }
-    unsigned char macb[MAC_LENGTH];
+    char macb[MAC_LENGTH];
     bool is_broadcast = true;
     for (int i = 0; i < MAC_LENGTH; i++) {
       macb[i] = strtol(mac + (i * 3), NULL, 16);
-      if (macb[i] != 255) is_broadcast = false;
-    }
-    if (group_by_vendor) {
-      // If grouping by vendor, ignore non-OUI bytes
-      macb[3] = 0;
-      macb[4] = 0;
-      macb[5] = 0;
+      if (macb[i] != ~0) is_broadcast = false;
     }
     // Ignore broadcasted packets
     if (is_broadcast) {
       continue;
+    }
+    // If grouping by vendor, ignore non-OUI bytes
+    if (group_by_vendor) {
+      macb[3] = 0;
+      macb[4] = 0;
+      macb[5] = 0;
     }
     // Get the number of bytes
     int bytes = atoi(fields[3]);
@@ -194,12 +185,15 @@ int read_packets_file(char *filename, char t_or_r, unsigned char (*mac_list)[MAC
   return list_len;
 }
 
-int read_oui_file(char *filename, unsigned char (**prefixes_out)[OUI_LENGTH], char ***vendors_out)
+/** Reads the OUI file and creates an array of OUIs with
+    a corresponding array of vendor names
+**/
+int read_oui_file(char *filename, char (**ouis_out)[OUI_LENGTH], char ***vendors_out)
 {
   // Create a buffer with an initial size
   int size = 0;
   int capacity = 1024;
-  unsigned char (*prefixes)[OUI_LENGTH] = malloc(capacity * OUI_LENGTH * sizeof(unsigned char));
+  char (*ouis)[OUI_LENGTH] = malloc(capacity * OUI_LENGTH * sizeof(char));
   char **vendors = malloc(capacity * sizeof(char*));
   // Open the file
   FILE *fp;
@@ -224,37 +218,35 @@ int read_oui_file(char *filename, unsigned char (**prefixes_out)[OUI_LENGTH], ch
     // Get the vendor name, and remove trailing newline
     char *vendor = fields[1];
     vendor[strlen(vendor) - 1] = '\0';
-    // Convert the MAC prefix to raw bytes
+    // Convert the MAC oui to raw bytes
     char *mac = fields[0];
-    unsigned char macb[OUI_LENGTH];
+    char macb[OUI_LENGTH];
     for (int i = 0; i < OUI_LENGTH; i++) {
       macb[i] = strtol(mac + (i * OUI_LENGTH), NULL, 16);
     }
-    // Insert the new MAC prefix
+    // Insert the new MAC oui
     if (size >= capacity) {
       // Grow the buffer
       capacity += 1024;
-      unsigned char (*new_prefixes)[3] = malloc(capacity * OUI_LENGTH * sizeof(unsigned char));
+      char (*new_ouis)[3] = malloc(capacity * OUI_LENGTH * sizeof(char));
       char **new_vendors = malloc(capacity * sizeof(char*));
-      memcpy(new_prefixes, prefixes, size * OUI_LENGTH * sizeof(unsigned char));
+      memcpy(new_ouis, ouis, size * OUI_LENGTH);
       memcpy(new_vendors, vendors, size * sizeof(char*));
-      free(prefixes);
+      free(ouis);
       free(vendors);
-      prefixes = new_prefixes;
+      ouis = new_ouis;
       vendors = new_vendors;
     }
-    memcpy(prefixes[size], macb, OUI_LENGTH);
+    memcpy(ouis[size], macb, OUI_LENGTH);
     int vendor_len = strlen(vendor) + 1;
-    vendors[size] = malloc(vendor_len * sizeof(char));
-    memcpy(vendors[size], vendor, vendor_len * sizeof(char));
+    vendors[size] = malloc(vendor_len);
+    memcpy(vendors[size], vendor, vendor_len);
     size++;
   }
   // Close the file
   fclose(fp);
-  // Sort by vendor prefix
-  // sort_vendors_by_oui(prefixes, vendors, size);
   // Return the data and number of vendors
-  *prefixes_out = prefixes;
+  *ouis_out = ouis;
   *vendors_out = vendors;
   return size;
 }
@@ -268,29 +260,33 @@ int main(int argc, char *argv[])
   // Check and read in command line arguments
   switch(argc) {
     case 4:
-    use_oui = true;
-    oui_fn = argv[3];
+      use_oui = true;
+      oui_fn = argv[3];
     case 3:
-    packets_fn = argv[2];
-    t_or_r = argv[1][0];
-    break;
+      packets_fn = argv[2];
+      t_or_r = tolower(argv[1][0]);
+      if ((t_or_r != 't') && (t_or_r != 'r')) {
+        printf("First argument must be 't' or 'r'.\n");
+        exit(EXIT_FAILURE);
+      }
+      break;
     default:
-    printf("Wrong number of arguments.\n");
-    exit(EXIT_FAILURE);
+      printf("Wrong number of arguments.\n");
+      exit(EXIT_FAILURE);
   }
   // Create buffers for storing data
   int num_packets, num_vendors;
-  unsigned char mac_list[1024][MAC_LENGTH];
+  char mac_list[1024][MAC_LENGTH];
   int bytes_list[1024];
-  unsigned char (*prefixes)[OUI_LENGTH] = NULL;
+  char (*ouis)[OUI_LENGTH] = NULL;
   char **vendors = NULL;
   // Parse the OUI file if supplied
   if (use_oui) {
-    num_vendors = read_oui_file(oui_fn, &prefixes, &vendors);
+    num_vendors = read_oui_file(oui_fn, &ouis, &vendors);
   }
   // Parse the packet file
   num_packets = read_packets_file(packets_fn, t_or_r, mac_list, bytes_list, use_oui);
   // Print the results in sorted order
-  print_sorted(mac_list, bytes_list, num_packets, prefixes, vendors, num_vendors);
+  print_sorted(mac_list, bytes_list, num_packets, ouis, vendors, num_vendors);
   return 0;
 }
