@@ -142,38 +142,28 @@ int read_packets_file(char *filename, char t_or_r, char (*mac_list)[MAC_LENGTH],
       field++;
       fields[field] = c + 1;
     }
-    // Get the MAC address and convert to raw bytes
-    char *mac = fields[1];
-    if (t_or_r == 'r') {
-      mac = fields[2];
-    }
-    char macb[MAC_LENGTH];
-    bool is_broadcast = true;
+    // Get the MAC addresses and convert to raw bytes
+    char *mac_t = fields[1];
+    char *mac_r = fields[2];
+    char macb_t[MAC_LENGTH], macb_r[MAC_LENGTH];
+    bool t_broadcast = true, r_broadcast = true;
     for (int i = 0; i < MAC_LENGTH; i++) {
-      macb[i] = strtol(mac + (i * 3), NULL, 16);
-      if (macb[i] != ~0) is_broadcast = false;
+      macb_t[i] = strtol(mac_t + (i * 3), NULL, 16);
+      macb_r[i] = strtol(mac_r + (i * 3), NULL, 16);
+      if (macb_t[i] != ~0) t_broadcast = false;
+      if (macb_r[i] != ~0) r_broadcast = false;
     }
     // Ignore broadcasted packets
-    if (is_broadcast) {
+    if (t_broadcast || r_broadcast) {
       continue;
     }
-    /******/
-    // Get the MAC address and convert to raw bytes
-    char *mac2 = fields[2];
-    if (t_or_r == 'r') {
-      mac2 = fields[1];
+    // Select the right MAC address
+    char *macb;
+    if (t_or_r == 't') {
+      macb = macb_t;
+    } else {
+      macb = macb_r;
     }
-    char macb2[MAC_LENGTH];
-    bool is_broadcast2 = true;
-    for (int i = 0; i < MAC_LENGTH; i++) {
-      macb2[i] = strtol(mac2 + (i * 3), NULL, 16);
-      if (macb2[i] != ~0) is_broadcast2 = false;
-    }
-    // Ignore broadcasted packets
-    if (is_broadcast2) {
-      continue;
-    }
-    /******/
     // If grouping by vendor, ignore non-OUI bytes
     if (group_by_vendor) {
       macb[3] = 0;
