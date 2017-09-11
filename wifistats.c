@@ -48,11 +48,11 @@ void print_sorted(char (*mac_list)[MAC_LENGTH], int *bytes_list, int num_macs, c
     dup2(pd[0], STDIN_FILENO);
     dup2(pd[3], STDOUT_FILENO);
     // Sorts by bytes (2nd column) descending, then by mac address (1st column) ascending
-    char *args[] = { "sort", "-t", "\t", "-k", "2,2", "-nr", "-k", "1,1", NULL };
+    char *args[] = { "sort", "-t", "\t", "-k", "2,2nr", "-k", "1,1", NULL };
     if (ouis != NULL) {
       // Sorts by bytes (3rd column) descending, then by vendor name (2nd column) ascending
-      args[4] = "3,3";
-      args[7] = "2,2";
+      args[3] = "3,3";
+      args[6] = "2,2";
     }
     execv("/usr/bin/sort", args);
     _exit(errno);
