@@ -146,15 +146,14 @@ int read_packets_file(char *filename, char t_or_r, char (*mac_list)[MAC_LENGTH],
     char *mac_t = fields[1];
     char *mac_r = fields[2];
     char macb_t[MAC_LENGTH], macb_r[MAC_LENGTH];
-    bool t_broadcast = true, r_broadcast = true;
+    bool is_broadcast = true;
     for (int i = 0; i < MAC_LENGTH; i++) {
       macb_t[i] = strtol(mac_t + (i * 3), NULL, 16);
       macb_r[i] = strtol(mac_r + (i * 3), NULL, 16);
-      if (macb_t[i] != ~0) t_broadcast = false;
-      if (macb_r[i] != ~0) r_broadcast = false;
+      if (macb_r[i] != ~0) is_broadcast = false;
     }
     // Ignore broadcasted packets
-    if (t_broadcast || r_broadcast) {
+    if (is_broadcast) {
       continue;
     }
     // Select the right MAC address
